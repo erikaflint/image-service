@@ -17,15 +17,26 @@ Window, Soft Fractal Sky).
 ## API
 
 `POST /generate` -- `{ "prompt": "...", "aspectRatio": "1:1", "slug": "optional-name", "referenceKeys": ["images/existing-key.jpg"] }`
-returns `{ ok, key, url }`. Generates via Gemini, stores in R2 (`chc-media`
-bucket, `images/` prefix), returns a public URL served by this same Worker.
-`referenceKeys` is optional -- up to 14 existing images (Gemini's real
-documented limit) can be passed as real image-to-image input alongside the
-text prompt, for genuine "more like this" variations or keeping a batch of
-images (e.g. stills for one video) visually cohesive. Verified live:
-generating from a reference image preserved the same composition (same
-landscape, same building placement) while changing time of day per the
-prompt -- a real variation, not a fresh random scene.
+returns `{ ok, key, url, original: { key, url } }`. Generates via Gemini,
+stores in R2 (`chc-media` bucket, `images/` prefix), returns a public URL
+served from `cdn.cascadehypnosiscenter.com` (same bucket, confirmed live
+2026-09-01). `referenceKeys` is optional -- up to 14 existing images
+(Gemini's real documented limit) can be passed as real image-to-image input
+alongside the text prompt, for genuine "more like this" variations or
+keeping a batch of images (e.g. stills for one video) visually cohesive.
+Verified live: generating from a reference image preserved the same
+composition (same landscape, same building placement) while changing time
+of day per the prompt -- a real variation, not a fresh random scene.
+
+**Two files are stored per generation, in the same `images/` folder:**
+Gemini's raw output runs 700-900KB, too large for actual site use, so every
+generation also produces a web-ready variant via the Cloudflare Workers
+Images binding (resized to max width 1024, converted to WebP, quality 80).
+`key`/`url` in the response point to this web variant -- it's the one to
+use on the site. `original.key`/`original.url` point at the full-size
+source JPEG, kept alongside it for any future need (e.g. a higher-res
+reprocess). Verified live 2026-09-01: a 659,634-byte original produced a
+41,466-byte web variant -- a real ~16x reduction, not a token resize.
 
 `GET /images/:key` -- serves a generated image back from R2.
 

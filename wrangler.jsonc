@@ -17,6 +17,9 @@
       "bucket_name": "chc-media"
     }
   ],
+  "images": {
+    "binding": "IMAGES"
+  },
   "observability": {
     "enabled": true
   }

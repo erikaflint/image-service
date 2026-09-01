@@ -1,10 +1,16 @@
 export interface Env {
   MEDIA_BUCKET: R2Bucket;
   GEMINI_API_KEY: string;
+  IMAGES: ImagesBinding;
 }
 
 const INTERACTIONS_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/interactions";
 const DEFAULT_MODEL = "gemini-3.1-flash-image";
+// cdn.cascadehypnosiscenter.com serves the same chc-media R2 bucket this
+// Worker writes to (same key = same file, confirmed live 2026-09-01) -- this
+// is the real, canonical asset domain the rest of the site/ecosystem
+// expects, so it's what gets returned, not this Worker's own domain.
+const CDN_BASE = "https://cdn.cascadehypnosiscenter.com";
 
 // Ported from kitt/tools/nano_banana_worker.py's generate_with_gemini(), same
 // endpoint/model/request shape, confirmed working there before this port.
@@ -155,14 +161,40 @@ export default {
       }
 
       const slug = slugify(body.slug || prompt);
-      const key = `images/${slug}-${Date.now()}.jpg`;
+      const stamp = Date.now();
+      const originalKey = `images/${slug}-${stamp}-original.jpg`;
+      const webKey = `images/${slug}-${stamp}.webp`;
 
-      await env.MEDIA_BUCKET.put(key, imageBytes, {
+      await env.MEDIA_BUCKET.put(originalKey, imageBytes, {
         httpMetadata: { contentType: "image/jpeg" },
       });
 
-      const imageUrl = new URL(`/images/${key.replace("images/", "")}`, url.origin).toString();
-      return json({ ok: true, key, url: imageUrl });
+      // Real web-ready variant, same folder as the original, clearly named --
+      // Gemini's raw output runs 700-900KB, too large for actual site use.
+      // Cap width at 1024 (native output size, so this is compression not
+      // downscaling for typical use) and convert to WebP at quality 80.
+      let webBytes: ArrayBuffer;
+      try {
+        const transformed = await env.IMAGES.input(new Response(imageBytes).body!)
+          .transform({ width: 1024 })
+          .output({ format: "image/webp", quality: 80 });
+        webBytes = await transformed.response().arrayBuffer();
+      } catch (error) {
+        // If the Images binding fails for any reason, fall back to the
+        // original rather than losing the generation entirely.
+        webBytes = imageBytes;
+      }
+
+      await env.MEDIA_BUCKET.put(webKey, webBytes, {
+        httpMetadata: { contentType: webBytes === imageBytes ? "image/jpeg" : "image/webp" },
+      });
+
+      return json({
+        ok: true,
+        key: webKey,
+        url: `${CDN_BASE}/${webKey}`,
+        original: { key: originalKey, url: `${CDN_BASE}/${originalKey}` },
+      });
     }
 
     if (request.method === "GET" && url.pathname.startsWith("/images/")) {
