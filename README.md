@@ -16,11 +16,22 @@ Window, Soft Fractal Sky).
 
 ## API
 
-`POST /generate` -- `{ "prompt": "...", "aspectRatio": "1:1", "slug": "optional-name" }`
+`POST /generate` -- `{ "prompt": "...", "aspectRatio": "1:1", "slug": "optional-name", "referenceKeys": ["images/existing-key.jpg"] }`
 returns `{ ok, key, url }`. Generates via Gemini, stores in R2 (`chc-media`
 bucket, `images/` prefix), returns a public URL served by this same Worker.
+`referenceKeys` is optional -- up to 14 existing images (Gemini's real
+documented limit) can be passed as real image-to-image input alongside the
+text prompt, for genuine "more like this" variations or keeping a batch of
+images (e.g. stills for one video) visually cohesive. Verified live:
+generating from a reference image preserved the same composition (same
+landscape, same building placement) while changing time of day per the
+prompt -- a real variation, not a fresh random scene.
 
 `GET /images/:key` -- serves a generated image back from R2.
+
+`GET /images?limit=50&cursor=...` -- lists generated images (paginated,
+newest first). R2's own dashboard already covers manual browsing; this is
+for apps/roles that need to list and pick images programmatically.
 
 `GET /health` -- health check.
 
