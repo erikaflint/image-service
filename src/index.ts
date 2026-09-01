@@ -8,10 +8,25 @@ const DEFAULT_MODEL = "gemini-3.1-flash-image";
 
 // Ported from kitt/tools/nano_banana_worker.py's generate_with_gemini(), same
 // endpoint/model/request shape, confirmed working there before this port.
-async function generateImage(prompt: string, apiKey: string, aspectRatio: string): Promise<ArrayBuffer> {
+// Extended to accept reference images (up to 14 per Gemini's real documented
+// limit) so a generation can be visually anchored to prior output -- this is
+// what makes "more like this" a real image-to-image variation instead of a
+// fresh re-roll on the same text prompt, and what lets a batch of stills for
+// one video actually look like they belong together.
+async function generateImage(
+  prompt: string,
+  apiKey: string,
+  aspectRatio: string,
+  referenceImages: { data: string; mimeType: string }[] = [],
+): Promise<ArrayBuffer> {
+  const input: Array<Record<string, unknown>> = referenceImages
+    .slice(0, 14)
+    .map((ref) => ({ type: "image", data: ref.data, mime_type: ref.mimeType }));
+  input.push({ type: "text", text: prompt });
+
   const body = {
     model: DEFAULT_MODEL,
-    input: [{ type: "text", text: prompt }],
+    input,
     response_format: {
       type: "image",
       mime_type: "image/jpeg",
@@ -92,7 +107,7 @@ export default {
     const url = new URL(request.url);
 
     if (request.method === "POST" && url.pathname === "/generate") {
-      let body: { prompt?: string; aspectRatio?: string; slug?: string };
+      let body: { prompt?: string; aspectRatio?: string; slug?: string; referenceKeys?: string[] };
       try {
         body = await request.json();
       } catch {
@@ -109,9 +124,32 @@ export default {
         return json({ error: "GEMINI_API_KEY is not configured on this Worker" }, 500);
       }
 
+      // Optional: anchor this generation to up to 14 existing images already
+      // in this bucket (by key) -- real image-to-image input, for "more like
+      // this" variations or keeping a batch of stills visually cohesive.
+      const referenceImages: { data: string; mimeType: string }[] = [];
+      for (const refKey of (body.referenceKeys || []).slice(0, 14)) {
+        const normalizedKey = refKey.startsWith("images/") ? refKey : `images/${refKey}`;
+        const object = await env.MEDIA_BUCKET.get(normalizedKey);
+        if (!object) {
+          return json({ error: `referenceKeys: not found: ${refKey}` }, 400);
+        }
+        const bytes = await object.arrayBuffer();
+        let binary = "";
+        const chunk = 8192;
+        const view = new Uint8Array(bytes);
+        for (let i = 0; i < view.length; i += chunk) {
+          binary += String.fromCharCode(...view.subarray(i, i + chunk));
+        }
+        referenceImages.push({
+          data: btoa(binary),
+          mimeType: object.httpMetadata?.contentType || "image/jpeg",
+        });
+      }
+
       let imageBytes: ArrayBuffer;
       try {
-        imageBytes = await generateImage(prompt, env.GEMINI_API_KEY, aspectRatio);
+        imageBytes = await generateImage(prompt, env.GEMINI_API_KEY, aspectRatio, referenceImages);
       } catch (error) {
         return json({ error: error instanceof Error ? error.message : String(error) }, 502);
       }
@@ -138,6 +176,26 @@ export default {
       headers.set("etag", object.httpEtag);
       headers.set("cache-control", "public, max-age=31536000, immutable");
       return new Response(object.body, { headers });
+    }
+
+    if (request.method === "GET" && url.pathname === "/images") {
+      const cursor = url.searchParams.get("cursor") || undefined;
+      const limit = Math.min(Number(url.searchParams.get("limit")) || 50, 200);
+      const listed = await env.MEDIA_BUCKET.list({ prefix: "images/", cursor, limit });
+      const items = listed.objects
+        .sort((a, b) => (b.uploaded?.getTime() ?? 0) - (a.uploaded?.getTime() ?? 0))
+        .map((obj) => ({
+          key: obj.key,
+          url: new URL(`/images/${obj.key.replace("images/", "")}`, url.origin).toString(),
+          size: obj.size,
+          uploaded: obj.uploaded?.toISOString() ?? null,
+        }));
+      return json({
+        ok: true,
+        count: items.length,
+        items,
+        cursor: listed.truncated ? listed.cursor : null,
+      });
     }
 
     if (request.method === "GET" && url.pathname === "/health") {
