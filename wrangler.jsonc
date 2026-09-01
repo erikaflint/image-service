@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "image-service",
+  "account_id": "6a74137428b52a086eae80ee0f38c7fb",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-31",
+  "compatibility_flags": ["nodejs_compat"],
+  "r2_buckets": [
+    {
+      "binding": "MEDIA_BUCKET",
+      "bucket_name": "chc-media"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}
