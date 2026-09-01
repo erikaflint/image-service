@@ -5,6 +5,12 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-08-31",
   "compatibility_flags": ["nodejs_compat"],
+  "routes": [
+    {
+      "pattern": "image.cascadehypnosiscenter.com",
+      "custom_domain": true
+    }
+  ],
   "r2_buckets": [
     {
       "binding": "MEDIA_BUCKET",
