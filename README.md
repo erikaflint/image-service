@@ -46,6 +46,33 @@ for apps/roles that need to list and pick images programmatically.
 
 `GET /health` -- health check.
 
+## Delivery Variants
+
+This service creates source assets. Cloudflare should create delivery variants.
+
+Once Image Transformations are enabled for the CHC zone and allowed to pull from
+`cdn.cascadehypnosiscenter.com`, downstream code should prefer deterministic
+Cloudflare transformation URLs over pre-generating a pile of files after each
+image run.
+
+Default pattern:
+
+```text
+Generate one good source image -> store it in R2 -> serve thumbnails, page
+images, mobile/desktop sizes, WebP, and AVIF through Cloudflare.
+```
+
+Suggested starting sizes:
+
+- gallery thumbnails: `width=300,format=auto`
+- small inline images: `width=640,format=auto`
+- standard page images: `width=1024,format=auto`
+- wide hero/social review images: `width=1600,format=auto`
+
+Do not add another image-generation implementation in other apps, and do not
+generate every WebP/thumbnail/mobile/desktop variant as a physical file unless a
+specific downstream platform genuinely needs files rather than transformed URLs.
+
 ## Secrets
 
 `GEMINI_API_KEY` -- set via `wrangler secret put GEMINI_API_KEY`, not a `.env`
