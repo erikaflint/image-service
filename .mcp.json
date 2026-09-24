@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "kitt-runtime": {
+      "command": "/Users/erikaflint/code/kitt/tools/kitt-mcp/.venv/bin/python",
+      "args": [
+        "/Users/erikaflint/code/kitt/tools/kitt-mcp/server.py"
+      ]
+    }
+  }
+}
